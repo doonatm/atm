@@ -142,7 +142,7 @@
             <table id="customer-table">
                 <thead>
                     <tr>
-                        <th>Installation Date <br><input type="text" class="col-filter" placeholder="Filter..." onkeyup="filterTable()"></th>
+                        <th>Date & Time <br><input type="text" class="col-filter" placeholder="Filter..." onkeyup="filterTable()"></th>
                         <th>Token <br><input type="text" class="col-filter" placeholder="Filter..." onkeyup="filterTable()"></th>
                         <th>Customer <br><input type="text" class="col-filter" placeholder="Filter..." onkeyup="filterTable()"></th>
                         <th>Mobile <br><input type="text" class="col-filter" placeholder="Filter..." onkeyup="filterTable()"></th>
@@ -175,11 +175,25 @@
     </div>
 
     <script>
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzjbBRgrEq6R7kybhs_totNu636C7VQd9a9OLtS8YIiI-Tzo7DyRlOcP30khqzlpJZ_/exec";
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwNmOjGHTt_3eAdeH5UJPbVSod76lg0grMiUPWtA6MSBqxrB_jgeCSFrjR8zdyJDkUc/exec";
         let rawData = [];
 
-        // Set default date to today
         document.getElementById('inst-date').valueAsDate = new Date();
+
+        // NAYA HELPER: Isse Date format bilkul saaf "26-03-2026 | 08:30 PM" aayega
+        function formatReadableDateTime(inputDate) {
+            let d = new Date(inputDate);
+            // Agar inputDate invalid hai toh current time le lo
+            if (isNaN(d.getTime())) d = new Date();
+            
+            let day = String(d.getDate()).padStart(2, '0');
+            let month = String(d.getMonth() + 1).padStart(2, '0');
+            let year = d.getFullYear();
+            
+            // 12-hour format with AM/PM
+            let timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+            return `${day}-${month}-${year} | ${timeStr}`;
+        }
 
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
@@ -230,18 +244,30 @@
                 rawData = await response.json();
                 const tbody = document.getElementById('data-list');
                 tbody.innerHTML = "";
+                
                 [...rawData].reverse().forEach(row => {
-                    let displayDate = row[9] ? row[9] : 'N/A'; 
+                    let dateStr = row[9] ? row[9].toString() : 'N/A';
                     
+                    // Agar Sheet se ISO format (T18:30...) aa raha hai toh usey clean karo
+                    if (dateStr.includes('T')) {
+                        let d = new Date(dateStr);
+                        let day = String(d.getDate()).padStart(2, '0');
+                        let month = String(d.getMonth() + 1).padStart(2, '0');
+                        let year = d.getFullYear();
+                        let time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                        dateStr = `${day}-${month}-${year} | ${time}`;
+                    }
+
                     tbody.innerHTML += `
                         <tr>
-                            <td>${displayDate}</td>
+                            <td style="font-size:13px; font-weight:bold;">${dateStr}</td>
                             <td style="color:var(--primary); font-weight:600;">#${row[1]}</td>
                             <td><strong>${row[2]}</strong></td>
                             <td>${row[3]}</td><td>${row[4]}</td><td>${row[5]} KW</td>
                             <td>₹${row[6]}</td><td>₹${row[7]}</td><td class="pending">₹${row[8]}</td>
                             <td>
-                                <span style="color:var(--primary); cursor:pointer; font-weight:bold; margin-right:15px;" onclick="openEdit('${row[0]}','${row[1]}','${row[2].replace(/'/g, "\\'")}','${row[3]}','${row[4].replace(/'/g, "\\'")}','${row[5]}','${row[6]}','${row[7]}','${row[8]}','${row[9]}')">EDIT</span>
+                                <span style="color:var(--primary); cursor:pointer; font-weight:bold; margin-right:15px;" 
+                                onclick="openEdit('${row[0]}','${row[1]}','${row[2].replace(/'/g, "\\'")}','${row[3]}','${row[4].replace(/'/g, "\\'")}','${row[5]}','${row[6]}','${row[7]}','${row[8]}','${dateStr}')">EDIT</span>
                                 <span style="color:#e63946; cursor:pointer; font-weight:bold;" onclick="del('${row[0]}')">DEL</span>
                             </td>
                         </tr>`;
@@ -253,28 +279,39 @@
         async function saveData() {
             const token = document.getElementById('token').value;
             const nameInput = document.getElementById('name').value;
-            const dateVal = document.getElementById('inst-date').value;
+            const dateInput = document.getElementById('inst-date').value;
+            
             if(!nameInput || !token) return alert("Fill Name & Token!");
+            
             const btn = document.getElementById('save-btn');
             btn.innerText = "SAVING..."; btn.disabled = true;
-            const finalName = getUniqueName(nameInput);
+            
+            // Format to Clean Date | Time AM/PM
+            const cleanDate = formatReadableDateTime(dateInput);
+
             const entry = {
-                action: "add", id: Date.now().toString(), token: token, name: finalName,
+                action: "add", id: Date.now().toString(), token: token, name: getUniqueName(nameInput),
                 mobile: document.getElementById('mobile').value,
                 addr: document.getElementById('addr').value, kw: document.getElementById('kw').value,
                 amount: document.getElementById('amount').value || 0,
                 recv: document.getElementById('recv').value || 0,
                 pend: (document.getElementById('amount').value || 0) - (document.getElementById('recv').value || 0),
-                date: dateVal
+                date: cleanDate
             };
             await fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify(entry) });
-            alert("Saved!");
+            alert("Saved with Time!");
             location.reload(); 
         }
 
         function openEdit(id, token, name, mobile, addr, kw, amount, recv, pend, date) {
             document.getElementById('e-id').value = id;
-            document.getElementById('e-inst-date').value = date;
+            // Sirf date nikalne ke liye split kiya
+            let onlyDate = date.split(' | ')[0];
+            if(onlyDate.includes('-')) {
+                let parts = onlyDate.split('-');
+                onlyDate = `${parts[2]}-${parts[1]}-${parts[0]}`; // dd-mm-yyyy to yyyy-mm-dd
+            }
+            document.getElementById('e-inst-date').value = onlyDate;
             document.getElementById('e-token').value = token;
             document.getElementById('e-name').value = name;
             document.getElementById('e-mobile').value = mobile;
@@ -289,9 +326,12 @@
         async function updateData() {
             const id = document.getElementById('e-id').value;
             const btn = document.getElementById('update-btn');
+            const newDate = document.getElementById('e-inst-date').value;
             btn.innerText = "UPDATING..."; btn.disabled = true;
+            
             const entry = {
-                action: "add", id: id,
+                action: "update",
+                id: id,
                 token: document.getElementById('e-token').value,
                 name: document.getElementById('e-name').value,
                 mobile: document.getElementById('e-mobile').value,
@@ -300,9 +340,9 @@
                 amount: document.getElementById('e-amount').value || 0,
                 recv: document.getElementById('e-recv').value || 0,
                 pend: (document.getElementById('e-amount').value || 0) - (document.getElementById('e-recv').value || 0),
-                date: document.getElementById('e-inst-date').value
+                date: formatReadableDateTime(newDate)
             };
-            await fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({action: "delete", id}) });
+            
             await fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify(entry) });
             alert("Updated Successfully!");
             location.reload();
